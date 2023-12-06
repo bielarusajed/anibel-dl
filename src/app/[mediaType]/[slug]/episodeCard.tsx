@@ -70,7 +70,7 @@ export default function EpisodeCard({ episode }: Props) {
   let ffmpeg: FFmpeg | null = null;
   if (typeof window !== 'undefined') if (window.ffmpeg) ffmpeg = window.ffmpeg;
 
-  const handleDownload = async (height?: number) => {
+  const handleDownload = async (height?: number | 'sub' | 'dub') => {
     if (episode.source === 'google') return window.open(episode.url, '_blank');
     if (episode.source !== 'anibel')
       return toast.toast({
@@ -78,6 +78,14 @@ export default function EpisodeCard({ episode }: Props) {
         description: 'Невядомая крыніца відэа.',
         variant: 'destructive',
       });
+    if (height === 'sub') {
+      const a = document.createElement('a');
+      a.href = new URL(episode.data.subtitles[0].path, episode.data.host).href;
+      a.download = episode.data.title + '.ass';
+      a.click();
+      return a.remove();
+    }
+
     if (!ffmpeg)
       return toast.toast({
         title: 'FFmpeg адсутнічае',
@@ -114,7 +122,7 @@ export default function EpisodeCard({ episode }: Props) {
 
     let variant: HLS.types.Variant | null = null;
 
-    if (height)
+    if (typeof height === 'number')
       variant = playlist.variants.reduce(function (prev, curr) {
         return Math.abs((curr.resolution?.height || 0) - height) < Math.abs((prev.resolution?.height || 0) - height)
           ? curr
@@ -192,57 +200,64 @@ export default function EpisodeCard({ episode }: Props) {
 
     setProgressState({
       value: 0,
-      max: video.segments.length + audio.segments.length + (subtitles?.fonts.length ? subtitles?.fonts.length + 7 : 6),
-      description: 'Спампоўванне відэа…',
+      max:
+        height !== 'dub'
+          ? video.segments.length + audio.segments.length + (subtitles?.fonts.length ? subtitles?.fonts.length + 7 : 6)
+          : audio.segments.length + 1,
+      description: height !== 'dub' ? 'Спампоўванне відэа…' : 'Спампоўванне аўдыё…',
     });
 
     await ffmpeg.createDir('video');
     await ffmpeg.createDir('audio');
     await ffmpeg.createDir('fonts');
 
-    await ffmpeg.writeFile('video/manifest.m3u8', videoManifest);
-    const videoInit = video.segments[0].map?.uri;
-    if (videoInit)
-      await ffmpeg.writeFile(urlJoin('video', videoInit), await fetchFile(urlJoin(videoBaseUrl, videoInit)));
-    setProgressState(prevState => ({ ...prevState, value: prevState.value + 1 }));
-    for (const segment of video.segments) {
-      await ffmpeg.writeFile(urlJoin('video', segment.uri), await fetchFile(urlJoin(videoBaseUrl, segment.uri)));
+    if (height !== 'dub') {
+      await ffmpeg.writeFile('video/manifest.m3u8', videoManifest);
+      const videoInit = video.segments[0].map?.uri;
+      if (videoInit)
+        await ffmpeg.writeFile(urlJoin('video', videoInit), await fetchFile(urlJoin(videoBaseUrl, videoInit)));
       setProgressState(prevState => ({ ...prevState, value: prevState.value + 1 }));
-    }
-
-    setProgressState(prevState => ({ ...prevState, description: 'Спампоўванне субцітраў…' }));
-    SUB_DOWNLOAD: if (subtitles) {
-      await ffmpeg.writeFile('subtitles.ass', await fetchFile(new URL(subtitles.path, episode.data.host).href));
-      setProgressState(prevState => ({
-        ...prevState,
-        value: prevState.value + 1,
-        description: 'Спампоўванне шрыфтоў…',
-      }));
-      if (subtitles.fonts.length === 0) break SUB_DOWNLOAD;
-      const fonts = await fetch('/api/fonts', {
-        method: 'POST',
-        body: JSON.stringify({ fontNames: subtitles.fonts }),
-        headers: { 'Content-Type': 'application/json' },
-      })
-        .then(r => r.json() as Promise<string[]>)
-        .catch(() => null);
-      setProgressState(prevState => ({ ...prevState, value: prevState.value + 1 }));
-      if (!fonts) {
-        toast.toast({
-          title: 'Памылка спампоўвання шрыфтоў',
-          description: 'Не атрымалася атрымаць спіс шрыфтоў. Выніковы файл не будзе змяшчаць шрыфты.',
-          variant: 'destructive',
-        });
-        break SUB_DOWNLOAD;
-      }
-      for (const font of fonts) {
-        await ffmpeg.writeFile(urlJoin('fonts', font.split('/').slice(-1)[0]), await fetchFile(font));
+      for (const segment of video.segments) {
+        await ffmpeg.writeFile(urlJoin('video', segment.uri), await fetchFile(urlJoin(videoBaseUrl, segment.uri)));
         setProgressState(prevState => ({ ...prevState, value: prevState.value + 1 }));
       }
-      setProgressState(prevState => ({ ...prevState, value: prevState.value + subtitles.fonts.length - fonts.length }));
-    }
 
-    setProgressState(prevState => ({ ...prevState, description: 'Спампоўванне аўдыё…' }));
+      setProgressState(prevState => ({ ...prevState, description: 'Спампоўванне субцітраў…' }));
+      SUB_DOWNLOAD: if (subtitles) {
+        await ffmpeg.writeFile('subtitles.ass', await fetchFile(new URL(subtitles.path, episode.data.host).href));
+        setProgressState(prevState => ({
+          ...prevState,
+          value: prevState.value + 1,
+          description: 'Спампоўванне шрыфтоў…',
+        }));
+        if (subtitles.fonts.length === 0) break SUB_DOWNLOAD;
+        const fonts = await fetch('/api/fonts', {
+          method: 'POST',
+          body: JSON.stringify({ fontNames: subtitles.fonts }),
+          headers: { 'Content-Type': 'application/json' },
+        })
+          .then(r => r.json() as Promise<string[]>)
+          .catch(() => null);
+        setProgressState(prevState => ({ ...prevState, value: prevState.value + 1 }));
+        if (!fonts) {
+          toast.toast({
+            title: 'Памылка спампоўвання шрыфтоў',
+            description: 'Не атрымалася атрымаць спіс шрыфтоў. Выніковы файл не будзе змяшчаць шрыфты.',
+            variant: 'destructive',
+          });
+          break SUB_DOWNLOAD;
+        }
+        for (const font of fonts) {
+          await ffmpeg.writeFile(urlJoin('fonts', font.split('/').slice(-1)[0]), await fetchFile(font));
+          setProgressState(prevState => ({ ...prevState, value: prevState.value + 1 }));
+        }
+        setProgressState(prevState => ({
+          ...prevState,
+          value: prevState.value + subtitles.fonts.length - fonts.length,
+        }));
+      }
+      setProgressState(prevState => ({ ...prevState, description: 'Спампоўванне аўдыё…' }));
+    }
     await ffmpeg.writeFile('audio/manifest.m3u8', audioManifest);
     const audioInit = audio.segments[0].map?.uri;
     if (audioInit)
@@ -255,20 +270,35 @@ export default function EpisodeCard({ episode }: Props) {
 
     setProgressState(prevState => ({ ...prevState, description: 'Аб’яднанне спампаваных файлаў…' }));
     try {
-      await ffmpeg.exec(['-i', 'video/manifest.m3u8', '-c:v', 'copy', 'video.mp4']);
-      setProgressState(prevState => ({ ...prevState, value: prevState.value + 1 }));
+      if (height !== 'dub') {
+        await ffmpeg.exec(['-i', 'video/manifest.m3u8', '-c:v', 'copy', 'video.mp4']);
+        setProgressState(prevState => ({ ...prevState, value: prevState.value + 1 }));
+      }
       await ffmpeg.exec(['-i', 'audio/manifest.m3u8', '-c:a', 'copy', 'audio.m4a']);
       setProgressState(prevState => ({ ...prevState, value: prevState.value + 1 }));
-
-      await ffmpeg
-        .listDir('video')
-        .then(f => Promise.all(f.filter(f => !f.isDir).map(f => ffmpeg!.deleteFile(`video/${f.name}`))))
-        .then(() => ffmpeg?.deleteDir('video'));
 
       await ffmpeg
         .listDir('audio')
         .then(f => Promise.all(f.filter(f => !f.isDir).map(f => ffmpeg!.deleteFile(`audio/${f.name}`))))
         .then(() => ffmpeg?.deleteDir('audio'));
+
+      if (height === 'dub') {
+        const data = await ffmpeg.readFile('audio.m4a');
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([data], { type: 'audio/mp4' }));
+        a.download = episode.data.title + '.m4a';
+        a.click();
+        URL.revokeObjectURL(a.href);
+        a.remove();
+        await ffmpeg.deleteFile('audio.m4a');
+        setProgressState(prevState => ({ ...prevState, value: prevState.value + 1, description: 'Гатова!' }));
+        return setLoading(false);
+      }
+
+      await ffmpeg
+        .listDir('video')
+        .then(f => Promise.all(f.filter(f => !f.isDir).map(f => ffmpeg!.deleteFile(`video/${f.name}`))))
+        .then(() => ffmpeg?.deleteDir('video'));
 
       await ffmpeg.exec([
         '-i',
@@ -340,14 +370,28 @@ export default function EpisodeCard({ episode }: Props) {
       {episode.source === 'anibel' ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button disabled={loading || !ffmpeg} variant="outline">
+            <Button disabled={loading} variant="outline">
               Спампаваць
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent className="w-24">
-            <DropdownMenuItem onClick={() => handleDownload(1080)}>1080p</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => handleDownload(720)}>720p</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => handleDownload(360)}>360p</DropdownMenuItem>
+          <DropdownMenuContent className="w-36">
+            <DropdownMenuItem disabled={!ffmpeg} onClick={() => handleDownload(1080)}>
+              1080p
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={!ffmpeg} onClick={() => handleDownload(720)}>
+              720p
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={!ffmpeg} onClick={() => handleDownload(360)}>
+              360p
+            </DropdownMenuItem>
+            {episode.type === 'sub' && (
+              <DropdownMenuItem onClick={() => handleDownload('sub')}>Толькі субцітры</DropdownMenuItem>
+            )}
+            {episode.type === 'dub' && (
+              <DropdownMenuItem disabled={!ffmpeg} onClick={() => handleDownload('dub')}>
+                Толькі агучка
+              </DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       ) : (
