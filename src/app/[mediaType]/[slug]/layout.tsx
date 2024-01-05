@@ -1,10 +1,23 @@
-import type { ReactNode } from 'react';
+'use client';
+
+import { type ReactNode, useMemo } from 'react';
+import { cacheExchange, createClient, fetchExchange, ssrExchange, UrqlProvider } from '@urql/next';
 import Link from 'next/link';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Undo2Icon } from 'lucide-react';
 import GithubButton from '@/components/github-button';
 
 export default function Layout({ children }: { children: ReactNode }) {
+  const [client, ssr] = useMemo(() => {
+    const ssr = ssrExchange();
+    const client = createClient({
+      url: 'https://trygql.formidable.dev/graphql/web-collections',
+      exchanges: [cacheExchange, ssr, fetchExchange],
+      suspense: true,
+    });
+
+    return [client, ssr];
+  }, []);
   return (
     <main className="container flex flex-col">
       <div className="flex w-full justify-between pt-4">
@@ -20,7 +33,9 @@ export default function Layout({ children }: { children: ReactNode }) {
       <span className="scroll-m-20 text-xl tracking-tight text-muted-foreground">
         Не закрывайце ўкладку, пакуль спампоўваецца серыя
       </span>
-      {children}
+      <UrqlProvider client={client} ssr={ssr}>
+        {children}
+      </UrqlProvider>
     </main>
   );
 }

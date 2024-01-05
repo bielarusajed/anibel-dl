@@ -1,6 +1,7 @@
 // noinspection GraphQLUnresolvedReference
 
-import { cacheExchange, Client, fetchExchange, gql, TypedDocumentNode } from '@urql/core';
+import { cacheExchange, createClient, fetchExchange, gql, type TypedDocumentNode } from '@urql/core';
+import { registerUrql } from '@urql/next/rsc';
 import { Suspense } from 'react';
 import FiltersBlock from './filtersBlock';
 import { EpisodeList } from './episodeList';
@@ -36,10 +37,14 @@ const episodesQuery: TypedDocumentNode<MediaResponse, { mediaType: string; slug:
   }
 `;
 
-const client = new Client({
-  url: 'https://anibel.net/graphql',
-  exchanges: [fetchExchange],
-});
+const makeClient = () => {
+  return createClient({
+    url: 'https://anibel.net/graphql',
+    exchanges: [cacheExchange, fetchExchange],
+    requestPolicy: 'network-only',
+  });
+};
+const { getClient } = registerUrql(makeClient);
 
 type Props = {
   params: { mediaType: string; slug: string };
@@ -49,7 +54,13 @@ type Props = {
 export default async function TitlePage({ params: { mediaType, slug }, searchParams }: Props) {
   const { type: _type } = searchParams ?? {};
   const type = Array.isArray(_type) ? _type[0] : _type;
-  const result = await client.query(episodesQuery, { mediaType, slug: decodeURIComponent(slug) }).toPromise();
+  const result = await getClient().query(
+    episodesQuery,
+    { mediaType, slug },
+    { fetchOptions: { next: { revalidate: 60 } } },
+  );
+
+  console.log(result);
 
   if (!result.data?.media?.episodes.length)
     return (
