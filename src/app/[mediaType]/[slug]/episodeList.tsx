@@ -1,6 +1,5 @@
 import EpisodeCard, { AnibelEpisode, Episode, GoogleEpisode } from './episodeCard';
 import { MediaResponse } from './page';
-import { useRef, useState } from 'react';
 
 const typePriorities = {
   sub: 0,

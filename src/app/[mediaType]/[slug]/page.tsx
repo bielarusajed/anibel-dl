@@ -38,7 +38,7 @@ const episodesQuery: TypedDocumentNode<MediaResponse, { mediaType: string; slug:
 
 const client = new Client({
   url: 'https://anibel.net/graphql',
-  exchanges: [cacheExchange, fetchExchange],
+  exchanges: [fetchExchange],
 });
 
 type Props = {
