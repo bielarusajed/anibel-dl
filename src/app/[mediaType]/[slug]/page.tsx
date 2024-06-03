@@ -56,11 +56,9 @@ export default async function TitlePage({ params: { mediaType, slug }, searchPar
   const type = Array.isArray(_type) ? _type[0] : _type;
   const result = await getClient().query(
     episodesQuery,
-    { mediaType, slug },
+    { mediaType, slug: decodeURIComponent(slug) },
     { fetchOptions: { next: { revalidate: 60 } } },
   );
-
-  console.log(result);
 
   if (!result.data?.media?.episodes.length)
     return (
