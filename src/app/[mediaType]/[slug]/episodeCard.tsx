@@ -14,7 +14,6 @@ import { fetchFile } from '@ffmpeg/util';
 import * as HLS from 'hls-parser';
 import urlJoin from 'url-join';
 import { Progress } from '@/components/ui/progress';
-import { Label } from '@/components/ui/label';
 
 export type GoogleEpisode = {
   source: 'google';
@@ -157,8 +156,8 @@ export default function EpisodeCard({ episode }: Props) {
       });
 
     const audioVariant = variant.audio.find(audio => {
-      if (episode.type === 'dub') return audio.language === 'bel';
-      if (episode.type === 'sub') return audio.language !== 'bel';
+      if (episode.type === 'dub') return !!audio.language?.match(/^bel?$/i);
+      if (episode.type === 'sub') return !audio.language?.match(/^bel?$/i);
     });
 
     if (!audioVariant)
