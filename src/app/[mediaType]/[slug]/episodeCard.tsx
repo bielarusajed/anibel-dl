@@ -69,6 +69,23 @@ export default function EpisodeCard({ episode }: Props) {
   let ffmpeg: FFmpeg | null = null;
   if (typeof window !== 'undefined') if (window.ffmpeg) ffmpeg = window.ffmpeg;
 
+  const handleCopyLink = async () => {
+    if (episode.source !== 'anibel') return;
+    const manifestUrl = await new Promise<URL>(r => r(new URL(episode.data.hls, episode.data.host))).catch(() => null);
+    if (!manifestUrl)
+      return toast.toast({
+        title: 'Памылка скапіявання',
+        description: 'Не атрымалася пабудаваць спасылку на маніфест.',
+        variant: 'destructive',
+      });
+    navigator.clipboard.writeText(manifestUrl.toString()).then(() => {
+      toast.toast({
+        title: 'Спасылка скапіявана',
+        description: 'Спасылка на плэй-ліст была паспяхова скапіявана ў ваш буфер абмену.',
+      });
+    });
+  };
+
   const handleDownload = async (height?: number | 'sub' | 'dub') => {
     if (episode.source === 'google') return window.open(episode.url, '_blank');
     if (episode.source !== 'anibel')
@@ -95,6 +112,7 @@ export default function EpisodeCard({ episode }: Props) {
 
     const baseUrl = urlJoin(episode.data.host, episode.data.hls.split('/').slice(0, -1).join('/'));
     const mUrl = await new Promise<URL>(r => r(new URL(episode.data.hls, episode.data.host))).catch(() => null);
+    console.log(mUrl);
     if (!mUrl)
       return toast.toast({
         title: 'Памылка спампоўвання',
@@ -373,7 +391,7 @@ export default function EpisodeCard({ episode }: Props) {
               Спампаваць
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent className="w-36">
+          <DropdownMenuContent className="w-48">
             <DropdownMenuItem disabled={!ffmpeg} onClick={() => handleDownload(1080)}>
               1080p
             </DropdownMenuItem>
@@ -391,6 +409,7 @@ export default function EpisodeCard({ episode }: Props) {
                 Толькі агучка
               </DropdownMenuItem>
             )}
+            <DropdownMenuItem onClick={() => handleCopyLink()}>Скапіяваць спасылку на плэй-ліст</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       ) : (
