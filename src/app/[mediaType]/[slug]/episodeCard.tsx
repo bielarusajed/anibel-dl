@@ -86,7 +86,7 @@ export default function EpisodeCard({ episode }: Props) {
     });
   };
 
-  const handleDownload = async (height?: number | 'sub' | 'dub') => {
+  const handleDownload = async (height?: number | 'sub' | 'dub' | 'signs') => {
     if (episode.source === 'google') return window.open(episode.url, '_blank');
     if (episode.source !== 'anibel')
       return toast.toast({
@@ -97,7 +97,15 @@ export default function EpisodeCard({ episode }: Props) {
     if (height === 'sub') {
       const a = document.createElement('a');
       a.href = new URL(episode.data.subtitles[0].path, episode.data.host).href;
-      a.download = episode.data.title + '.ass';
+      a.target = '_blank';
+      a.click();
+      return a.remove();
+    }
+
+    if (height === 'signs') {
+      const a = document.createElement('a');
+      a.href = new URL(episode.data.subtitles[1].path, episode.data.host).href;
+      a.target = '_blank';
       a.click();
       return a.remove();
     }
@@ -403,6 +411,9 @@ export default function EpisodeCard({ episode }: Props) {
             </DropdownMenuItem>
             {episode.type === 'sub' && (
               <DropdownMenuItem onClick={() => handleDownload('sub')}>Толькі субцітры</DropdownMenuItem>
+            )}
+            {episode.type === 'dub' && episode.data.subtitles.length > 1 && (
+              <DropdownMenuItem onClick={() => handleDownload('signs')}>Надпісы</DropdownMenuItem>
             )}
             {episode.type === 'dub' && (
               <DropdownMenuItem disabled={!ffmpeg} onClick={() => handleDownload('dub')}>
