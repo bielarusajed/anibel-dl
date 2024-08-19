@@ -1,5 +1,6 @@
 import EpisodeCard, { AnibelEpisode, Episode, GoogleEpisode } from './episodeCard';
 import { MediaResponse } from './page';
+import LogEpisodes from '@/app/[mediaType]/[slug]/logEpisodes';
 
 const typePriorities = {
   sub: 0,
@@ -47,6 +48,7 @@ export async function EpisodeList({ episodes: rawEpisodes }: Props) {
   episodes.sort((a, b) => a.number - b.number || typePriorities[a.type] - typePriorities[b.type]);
   return (
     <div className="flex flex-col gap-3">
+      <LogEpisodes episodes={episodes} />
       {episodes.map(episode => (
         <EpisodeCard key={`${episode.source}-${episode.number}-${episode.url}`} episode={episode} />
       ))}
