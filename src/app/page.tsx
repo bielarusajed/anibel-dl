@@ -10,7 +10,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { ThemeToggle } from '@/components/theme-toggle';
 import GithubButton from '@/components/github-button';
 
-const pathNameRegex = /^\/(?<mediaType>anime|cinema)\/(?<slug>\S+)$/i;
+const pathNameRegex = /^\/(?<mediaType>anime|cinema|manga)\/(?<slug>\S+)$/i;
 
 function getURLorNull(value: string): URL | null {
   try {
