@@ -11,6 +11,7 @@ import { ThemeToggle } from '@/components/theme-toggle';
 import GithubButton from '@/components/github-button';
 
 const pathNameRegex = /^\/(?<mediaType>anime|cinema|manga)\/(?<slug>\S+)$/i;
+const videoPathNameRegex = /^\/(?<uuid>\S+)$/i;
 
 function getURLorNull(value: string): URL | null {
   try {
@@ -20,13 +21,25 @@ function getURLorNull(value: string): URL | null {
   }
 }
 
+function isValidAnibelURL(url: URL): boolean {
+  if (url.hostname === 'anibel.net') return url.pathname.match(pathNameRegex) !== null;
+  if (url.hostname === 'video.anibel.net') return url.pathname.match(videoPathNameRegex) !== null;
+  return false;
+}
+
 const formSchema = z.object({
   url: z
     .string()
     .min(1, 'Устаўце спасылку на тайтл')
     .url({ message: 'Няверная спасылка' })
-    .refine(value => getURLorNull(value)?.hostname === 'anibel.net', 'Спасылка мае весці на Anibel.net')
-    .refine(value => getURLorNull(value)?.pathname.match(pathNameRegex), 'Няверны фармат спасылкі'),
+    .refine(value => {
+      const url = getURLorNull(value);
+      return url && (url.hostname === 'anibel.net' || url.hostname === 'video.anibel.net');
+    }, 'Спасылка мае весці на anibel.net або video.anibel.net')
+    .refine(value => {
+      const url = getURLorNull(value);
+      return url && isValidAnibelURL(url);
+    }, 'Няверны фармат спасылкі'),
 });
 
 export default function Home() {
@@ -38,12 +51,20 @@ export default function Home() {
 
   function onSubmit({ url }: z.infer<typeof formSchema>) {
     try {
-      const { mediaType, slug } = new URL(url).pathname.match(pathNameRegex)?.groups ?? {};
-      if (!mediaType || !slug) return form.setError('url', { message: 'Must be a valid title URL' });
-      router.push(`/${mediaType}/${slug}`);
+      const parsedURL = new URL(url);
+
+      if (parsedURL.hostname === 'anibel.net') {
+        const { mediaType, slug } = parsedURL.pathname.match(pathNameRegex)?.groups ?? {};
+        if (!mediaType || !slug) return form.setError('url', { message: 'Няверны фармат спасылкі' });
+        router.push(`/${mediaType}/${slug}`);
+      } else if (parsedURL.hostname === 'video.anibel.net') {
+        const { uuid } = parsedURL.pathname.match(videoPathNameRegex)?.groups ?? {};
+        if (!uuid) return form.setError('url', { message: 'Няверны фармат спасылкі' });
+        router.push(`/video/${uuid}`);
+      }
     } catch (e) {
       console.error(e);
-      form.setError('url', { message: 'Must be a valid title URL' });
+      form.setError('url', { message: 'Няверны фармат спасылкі' });
     }
   }
 
@@ -69,7 +90,10 @@ export default function Home() {
                 <FormItem className="w-full">
                   <FormLabel />
                   <FormControl>
-                    <Input placeholder="https://anibel.net/mediaType/slug" {...field} />
+                    <Input
+                      placeholder="https://anibel.net/mediaType/slug або https://video.anibel.net/uuid"
+                      {...field}
+                    />
                   </FormControl>
                   <FormDescription />
                   <FormMessage />
