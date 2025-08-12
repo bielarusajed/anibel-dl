@@ -95,16 +95,30 @@ export default function EpisodeCard({ episode }: Props) {
         variant: 'destructive',
       });
     if (height === 'sub') {
+      const subFile = episode.data.subtitles.find(s => s.path.endsWith('субцітры.ass')) || episode.data.subtitles[0];
+      if (!subFile)
+        return toast.toast({
+          title: 'Няма файла субцітраў',
+          description: 'Файл "субцітры.ass" не знойдзены.',
+          variant: 'destructive',
+        });
       const a = document.createElement('a');
-      a.href = new URL(episode.data.subtitles[0].path, episode.data.host).href;
+      a.href = new URL(subFile.path, episode.data.host).href;
       a.target = '_blank';
       a.click();
       return a.remove();
     }
 
     if (height === 'signs') {
+      const signsFile = episode.data.subtitles.find(s => s.path.endsWith('надпісы.ass'));
+      if (!signsFile)
+        return toast.toast({
+          title: 'Няма файла надпісаў',
+          description: 'Файл "надпісы.ass" не знойдзены.',
+          variant: 'destructive',
+        });
       const a = document.createElement('a');
-      a.href = new URL(episode.data.subtitles[1].path, episode.data.host).href;
+      a.href = new URL(signsFile.path, episode.data.host).href;
       a.target = '_blank';
       a.click();
       return a.remove();
@@ -120,7 +134,6 @@ export default function EpisodeCard({ episode }: Props) {
 
     const baseUrl = urlJoin(episode.data.host, episode.data.hls.split('/').slice(0, -1).join('/'));
     const mUrl = await new Promise<URL>(r => r(new URL(episode.data.hls, episode.data.host))).catch(() => null);
-    console.log(mUrl);
     if (!mUrl)
       return toast.toast({
         title: 'Памылка спампоўвання',
@@ -213,15 +226,12 @@ export default function EpisodeCard({ episode }: Props) {
         variant: 'destructive',
       });
 
-    const subtitles =
-      episode.data.subtitles.find(s => {
-        if (episode.type === 'sub') return s.path.endsWith('субцітры.ass');
-        if (episode.type === 'dub') return s.path.endsWith('надпісы.ass');
-      }) ||
-      (episode.type === 'sub'
-        ? episode.data.subtitles.find((_, i) => i === 0)
-        : episode.data.subtitles.find((_, i) => i === 1)) ||
-      episode.data.subtitles.find(() => true);
+    // Выбар файла субцітраў для ўбудавання ў выніковае відэа:
+    //  - для SUB: поўныя субцітры ("субцітры.ass"), калі няма — бярэм першы даступны
+    //  - для DUB: толькі знак-субы ("надпісы.ass"), калі няма — не ўбудоўваем нічога
+    const fullSubs = episode.data.subtitles.find(s => s.path.endsWith('субцітры.ass'));
+    const signSubs = episode.data.subtitles.find(s => s.path.endsWith('надпісы.ass'));
+    const subtitles = episode.type === 'sub' ? fullSubs || episode.data.subtitles[0] : signSubs || undefined;
 
     setProgressState({
       value: 0,
@@ -412,7 +422,7 @@ export default function EpisodeCard({ episode }: Props) {
             {episode.type === 'sub' && (
               <DropdownMenuItem onClick={() => handleDownload('sub')}>Толькі субцітры</DropdownMenuItem>
             )}
-            {episode.type === 'dub' && episode.data.subtitles.length > 1 && (
+            {episode.type === 'dub' && episode.data.subtitles.some(s => s.path.endsWith('надпісы.ass')) && (
               <DropdownMenuItem onClick={() => handleDownload('signs')}>Надпісы</DropdownMenuItem>
             )}
             {episode.type === 'dub' && (

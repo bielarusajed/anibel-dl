@@ -1,5 +1,7 @@
 import EpisodeCard, { AnibelEpisode } from './episodeCard';
 import FFmpegLoader from './ffmpegLoader';
+import ErrorToasts from './errorToasts';
+import * as HLS from 'hls-parser';
 
 type Props = {
   slug: string;
@@ -67,54 +69,74 @@ export default async function VideoPage({ slug }: Props) {
       next: { revalidate: 60 },
     });
     const videoData: VideoApiResponse = await response.json();
-    console.dir(videoData);
-    console.log('=== DEBUG INFO ===');
-    console.log('Support object:', videoData.support);
-    console.log('Subtitles array:', videoData.subtitles);
-    console.log('Subtitles length:', videoData.subtitles.length);
-    videoData.subtitles.forEach((sub, index) => {
-      console.log(`Subtitle ${index}:`, sub.path);
-    });
 
     // Стварэнне спісу даступных эпізодаў
     const availableEpisodes: AnibelEpisode[] = [];
+    const errorMessages: string[] = [];
 
-    // Вызначаем даступныя тыпы па назвах файлаў субцітраў
-    const hasSubtitles = videoData.subtitles.some(sub => sub.path.endsWith('субцітры.ass'));
-    const hasSigns = videoData.subtitles.some(sub => sub.path.endsWith('надпісы.ass'));
+    // 1) Парсим HLS маніфест, каб вызначыць наяўнасць беларускай/небеларускай дарожак
+    let hasBelarusianAudio = false;
+    let hasNonBelarusianAudio = false;
+    try {
+      const manifestUrl = new URL(videoData.hls, videoData.host);
+      const manifestText = await fetch(manifestUrl).then(r => r.text());
+      const playlist = HLS.parse(manifestText);
+      const isMaster = playlist instanceof HLS.types.MasterPlaylist;
+      if (isMaster) {
+        const variants = (playlist as HLS.types.MasterPlaylist).variants || [];
+        const audioRenditions = variants.flatMap(v => v.audio || []);
 
-    console.log('Has субцітры.ass (SUB):', hasSubtitles);
-    console.log('Has надпісы.ass (DUB):', hasSigns);
+        const isBelarusian = (value?: string): boolean => {
+          if (!value) return false;
+          const lower = value.toLowerCase();
+          if (lower === 'bel' || lower === 'be') return true;
+          return /belarus/i.test(lower) || /\u0431\u0435\u043b/i.test(lower);
+        };
 
-    if (hasSubtitles) {
-      console.log('Adding SUB episode based on subtitle file');
+        hasBelarusianAudio = audioRenditions.some(a => isBelarusian(a.language) || isBelarusian(a.name));
+        hasNonBelarusianAudio = audioRenditions.some(a => !isBelarusian(a.language) && !isBelarusian(a.name));
+      } else {
+        errorMessages.push('Плэйліст HLS нечаканы. Немагчыма вызначыць аўдыё.');
+      }
+    } catch {
+      errorMessages.push('Не атрымалася распрацаваць маніфест HLS.');
+    }
+
+    // 2) SUB: існуюць субцітры «субцітры.ass» і ёсць небеларуская аўдыё дарожка
+    const hasSubtitlesFile = videoData.subtitles.some(sub => sub.path.endsWith('субцітры.ass'));
+    if (hasSubtitlesFile && hasNonBelarusianAudio) {
       availableEpisodes.push(convertToEpisode(videoData, 'sub'));
     }
 
-    if (hasSigns) {
-      console.log('Adding DUB episode based on signs file');
+    // 3) DUB: вызначаем толькі праз наяўнасць беларускай аўдыё ў плэйлісце
+    if (hasBelarusianAudio) {
       availableEpisodes.push(convertToEpisode(videoData, 'dub'));
     }
 
-    // Fallback: калі няма спецыфічных файлаў, але ёсць субцітры - паказаць як sub
-    if (availableEpisodes.length === 0 && videoData.subtitles.length > 0) {
-      console.log('No specific subtitle files found, but subtitles exist - adding SUB episode as fallback');
-      availableEpisodes.push(convertToEpisode(videoData, 'sub'));
+    // 4) Акуратны fallback: калі нічога не вызначылі, паспрабуем кансерватыўна
+    if (availableEpisodes.length === 0) {
+      // Калі ёсць субцітры і хоць нейкая аўдыё дарожка не беларуская — даем SUB
+      if (hasSubtitlesFile && hasNonBelarusianAudio) {
+        availableEpisodes.push(convertToEpisode(videoData, 'sub'));
+      }
+      // Калі ёсць беларуская аўдыё — даем DUB
+      else if (hasBelarusianAudio) {
+        availableEpisodes.push(convertToEpisode(videoData, 'dub'));
+      } else if (videoData.subtitles.length > 0) {
+        // Калі не атрымалася распазнаць аўдыё, але ёсць субцітры — не дадаем SUB,
+        // каб не зламаць спампоўку (у SUB патрэбная небеларуская дарожка).
+      }
     }
-
-    console.log('Final available episodes:', availableEpisodes.length);
-    console.log(
-      'Episodes:',
-      availableEpisodes.map(ep => ({ type: ep.type, number: ep.number })),
-    );
 
     // Калі нічога не даступна
     if (availableEpisodes.length === 0) {
+      const messages = errorMessages.length ? errorMessages : ['Няма даступных варыянтаў для спампоўвання'];
       return (
         <div className="flex flex-grow items-center justify-center">
           <h1 className="mt-6 text-4xl font-extrabold tracking-tight lg:text-5xl">
             Няма даступных варыянтаў для спампоўвання
           </h1>
+          <ErrorToasts messages={messages} />
         </div>
       );
     }
@@ -130,13 +152,14 @@ export default async function VideoPage({ slug }: Props) {
             <EpisodeCard key={`${episode.type}-${index}`} episode={episode} />
           ))}
         </div>
+        {errorMessages.length > 0 && <ErrorToasts messages={errorMessages} />}
       </div>
     );
   } catch (error) {
-    console.error('Error fetching video data:', error);
     return (
       <div className="flex flex-grow items-center justify-center">
         <h1 className="mt-6 text-4xl font-extrabold tracking-tight lg:text-5xl">Памылка пры загрузцы даных відэа</h1>
+        <ErrorToasts messages={['Памылка пры загрузцы даных відэа']} />
       </div>
     );
   }
