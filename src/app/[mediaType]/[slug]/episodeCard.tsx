@@ -57,6 +57,27 @@ const fontsMimes = {
   WOFF: 'font/woff',
 } as { [key: string]: string };
 
+// Колькасць пакаёвак на кожны сегмент і максімальная колькасць паралельных загрузак
+const MAX_SEGMENT_RETRIES = 3;
+const MAX_PARALLEL_CONNECTIONS = 8;
+
+// Retry абгортка для `fetchFile`
+async function fetchFileWithRetry(url: string, maxRetries: number = MAX_SEGMENT_RETRIES): Promise<Uint8Array> {
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await fetchFile(url);
+    } catch (error) {
+      lastError = error;
+      if (attempt < maxRetries) {
+        // Невялікая пауза перад наступнай спробай
+        await new Promise(resolve => setTimeout(resolve, attempt * 300));
+      }
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('Невядомая памылка спампоўвання');
+}
+
 export default function EpisodeCard({ episode }: Props) {
   const [loading, setLoading] = useState<boolean>(false);
   const [progressState, setProgressState] = useState<{ value: number; max: number; description: string }>({
@@ -247,14 +268,36 @@ export default function EpisodeCard({ episode }: Props) {
     await ffmpeg.createDir('fonts');
 
     if (height !== 'dub') {
-      await ffmpeg.writeFile('video/manifest.m3u8', videoManifest);
-      const videoInit = video.segments[0].map?.uri;
-      if (videoInit)
-        await ffmpeg.writeFile(urlJoin('video', videoInit), await fetchFile(urlJoin(videoBaseUrl, videoInit)));
-      setProgressState(prevState => ({ ...prevState, value: prevState.value + 1 }));
-      for (const segment of video.segments) {
-        await ffmpeg.writeFile(urlJoin('video', segment.uri), await fetchFile(urlJoin(videoBaseUrl, segment.uri)));
+      try {
+        await ffmpeg.writeFile('video/manifest.m3u8', videoManifest);
+        const videoInit = video.segments[0].map?.uri;
+        if (videoInit) {
+          const initUrl = urlJoin(videoBaseUrl, videoInit);
+          const initDest = urlJoin('video', videoInit);
+          await ffmpeg.writeFile(initDest, await fetchFileWithRetry(initUrl, MAX_SEGMENT_RETRIES));
+        }
         setProgressState(prevState => ({ ...prevState, value: prevState.value + 1 }));
+
+        for (let i = 0; i < video.segments.length; i += MAX_PARALLEL_CONNECTIONS) {
+          const batch = video.segments.slice(i, i + MAX_PARALLEL_CONNECTIONS);
+          await Promise.all(
+            batch.map(async segment => {
+              const segUrl = urlJoin(videoBaseUrl, segment.uri);
+              const segDest = urlJoin('video', segment.uri);
+              const data = await fetchFileWithRetry(segUrl, MAX_SEGMENT_RETRIES);
+              await ffmpeg.writeFile(segDest, data);
+              setProgressState(prevState => ({ ...prevState, value: prevState.value + 1 }));
+            }),
+          );
+        }
+      } catch (e) {
+        toast.toast({
+          title: 'Памылка спампоўвання відэа',
+          description: 'Не атрымалася спампаваць усе відэа-сегменты пасля некалькіх спроб. Паспрабуйце яшчэ раз.',
+          variant: 'destructive',
+        });
+        setLoading(false);
+        return;
       }
 
       setProgressState(prevState => ({ ...prevState, description: 'Спампоўванне субцітраў…' }));
@@ -293,14 +336,36 @@ export default function EpisodeCard({ episode }: Props) {
       }
       setProgressState(prevState => ({ ...prevState, description: 'Спампоўванне аўдыё…' }));
     }
-    await ffmpeg.writeFile('audio/manifest.m3u8', audioManifest);
-    const audioInit = audio.segments[0].map?.uri;
-    if (audioInit)
-      await ffmpeg.writeFile(urlJoin('audio', audioInit), await fetchFile(urlJoin(audioBaseUrl, audioInit)));
-    setProgressState(prevState => ({ ...prevState, value: prevState.value + 1 }));
-    for (const segment of audio.segments) {
-      await ffmpeg.writeFile(urlJoin('audio', segment.uri), await fetchFile(urlJoin(audioBaseUrl, segment.uri)));
+    try {
+      await ffmpeg.writeFile('audio/manifest.m3u8', audioManifest);
+      const audioInit = audio.segments[0].map?.uri;
+      if (audioInit) {
+        const initUrl = urlJoin(audioBaseUrl, audioInit);
+        const initDest = urlJoin('audio', audioInit);
+        await ffmpeg.writeFile(initDest, await fetchFileWithRetry(initUrl, MAX_SEGMENT_RETRIES));
+      }
       setProgressState(prevState => ({ ...prevState, value: prevState.value + 1 }));
+
+      for (let i = 0; i < audio.segments.length; i += MAX_PARALLEL_CONNECTIONS) {
+        const batch = audio.segments.slice(i, i + MAX_PARALLEL_CONNECTIONS);
+        await Promise.all(
+          batch.map(async segment => {
+            const segUrl = urlJoin(audioBaseUrl, segment.uri);
+            const segDest = urlJoin('audio', segment.uri);
+            const data = await fetchFileWithRetry(segUrl, MAX_SEGMENT_RETRIES);
+            await ffmpeg.writeFile(segDest, data);
+            setProgressState(prevState => ({ ...prevState, value: prevState.value + 1 }));
+          }),
+        );
+      }
+    } catch (e) {
+      toast.toast({
+        title: 'Памылка спампоўвання аўдыё',
+        description: 'Не атрымалася спампаваць усе аўдыё-сегменты пасля некалькіх спроб. Паспрабуйце яшчэ раз.',
+        variant: 'destructive',
+      });
+      setLoading(false);
+      return;
     }
 
     setProgressState(prevState => ({ ...prevState, description: 'Аб’яднанне спампаваных файлаў…' }));
