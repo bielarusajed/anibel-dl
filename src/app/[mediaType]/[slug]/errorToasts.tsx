@@ -8,14 +8,14 @@ type Props = {
 };
 
 export default function ErrorToasts({ messages }: Props) {
-  const toast = useToast();
+  const { toast: pushToast } = useToast();
 
   useEffect(() => {
     if (!messages || messages.length === 0) return;
     for (const message of messages) {
-      toast.toast({ title: 'Памылка', description: message, variant: 'destructive' });
+      pushToast({ title: 'Памылка', description: message, variant: 'destructive' });
     }
-  }, [messages, toast]);
+  }, [messages, pushToast]);
 
   return null;
 }

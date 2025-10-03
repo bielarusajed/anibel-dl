@@ -13,7 +13,21 @@ export default function FiltersBlock({ className }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const handleChange = (value: string) => router.push(`?type=${value}`);
+  const handleChange = (value: string) => {
+    const currentType = searchParams.get('type') ?? '';
+    // Калі значэнне не змянілася — нічога не робім
+    if ((value || '') === currentType) return;
+
+    const params = new URLSearchParams(searchParams.toString());
+    if (!value) {
+      // Калі прыбралі фільтр — выдаляем параметр цалкам, каб не атрымліваць ?type=
+      params.delete('type');
+    } else {
+      params.set('type', value);
+    }
+    const query = params.toString();
+    router.replace(query ? `?${query}` : '?');
+  };
 
   return (
     <div className={cn('flex items-center gap-2', className)}>
